@@ -1,0 +1,58 @@
+import csv
+import codecs
+import urllib.request
+import urllib.error
+import sys
+import json
+from datetime import datetime
+from kafka import KafkaProducer
+
+# Kafka producer configuration
+producer = KafkaProducer(bootstrap_servers='localhost:9092',
+                         value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+
+# Configuration for Visual Crossing Weather API
+BaseURL = 'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/'
+ApiKey = 'GY9ZHUA5LQ3JJNELTU4JCJB2E'
+UnitGroup = 'us'
+Location = 'Washington,DC'
+StartDate = '2024-06-01'
+EndDate = '2024-06-15'
+ContentType = 'csv'
+Include = 'days'
+
+# Construct the API query URL
+ApiQuery = f"{BaseURL}{Location}/{StartDate}/{EndDate}?unitGroup={UnitGroup}&contentType={ContentType}&include={Include}&key={ApiKey}"
+
+try:
+    # Make HTTP request to Visual Crossing API
+    CSVBytes = urllib.request.urlopen(ApiQuery)
+    CSVText = csv.reader(codecs.iterdecode(CSVBytes, 'utf-8'))
+
+    # Skip header row
+    next(CSVText)
+
+    # Iterate through each row and produce to Kafka topic
+    for row in CSVText:
+        weather_data = {
+            'Location': row[0],
+            'Date': row[1],
+            'Min Temperature': row[4],
+            'Max Temperature': row[5],
+            'Precipitation': row[7],
+            'Wind Speed': row[9],
+            'Humidity': row[10]
+            # Add more fields as needed from the CSV response
+        }
+        # Produce the weather data to Kafka topic 'weather_data'
+        producer.send('weather_data', value=weather_data)
+        print(f"Produced weather data for {weather_data['Date']} to Kafka")
+
+except urllib.error.HTTPError as e:
+    print(f"HTTPError: {e.code}")
+except urllib.error.URLError as e:
+    print(f"URLError: {e.reason}")
+
+finally:
+    # Close the Kafka producer
+    producer.close()
