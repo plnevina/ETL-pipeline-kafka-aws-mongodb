@@ -1,0 +1,74 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+from kafka import KafkaConsumer
+import pymongo
+import json
+
+# Initialize SparkSession
+spark = SparkSession.builder \
+    .appName("WeatherDataStreaming") \
+    .getOrCreate()
+
+# Define schema for weather data
+weather_schema = StructType([
+    StructField("Location", StringType(), True),
+    StructField("Date", StringType(), True),
+    StructField("Min Temperature", DoubleType(), True),
+    StructField("Max Temperature", DoubleType(), True),
+    StructField("Precipitation", DoubleType(), True),
+    StructField("Wind Speed", DoubleType(), True),
+    StructField("Humidity", DoubleType(), True)
+])
+
+# Kafka consumer configuration
+consumer = KafkaConsumer('weather_data',
+                         bootstrap_servers='localhost:9092',
+                         auto_offset_reset='earliest',  # Start consuming from beginning of topic
+                         group_id='weather-group',  # Consumer group ID
+                         value_deserializer=lambda m: json.loads(m.decode('utf-8')))
+
+# MongoDB Atlas connection setup
+try:
+    client = pymongo.MongoClient("yourmongodburl")
+    db = client["weather_database"]
+    collection = db["weather_collection"]
+    print("MongoDB connection successful")
+except pymongo.errors.ConnectionError as e:
+    print("Error connecting to MongoDB:", e)
+    raise
+
+# Consume messages from Kafka
+for message in consumer:
+    weather_data = message.value
+
+    # Convert JSON data to Spark DataFrame with schema
+    weather_data_converted = {
+        "Location": weather_data["Location"],
+        "Date": weather_data["Date"],
+        "Min Temperature": float(weather_data["Min Temperature"]),
+        "Max Temperature": float(weather_data["Max Temperature"]),
+        "Precipitation": float(weather_data["Precipitation"]),
+        "Wind Speed": float(weather_data["Wind Speed"]),
+        "Humidity": float(weather_data["Humidity"])
+    }
+
+    weather_df = spark.createDataFrame([weather_data_converted], schema=weather_schema)
+
+    # Perform further processing or analysis on the data
+    weather_df.show()
+
+    # Convert Spark DataFrame to JSON and insert into MongoDB Atlas
+    weather_json = weather_df.toPandas().to_dict(orient='records')
+    
+    try:
+        collection.insert_many(weather_json)
+        print("Data inserted successfully")
+    except pymongo.errors.PyMongoError as e:
+        print("Error inserting data into MongoDB:", e)
+        raise
+
+# Close the consumer when done
+consumer.close()
+
+# Stop the SparkSession
+spark.stop()
