@@ -1,0 +1,72 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import from_json, col
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+from kafka import KafkaConsumer
+import json
+import os
+
+# Set AWS credentials (You can skip this step if credentials are set in the environment)
+os.environ['AWS_ACCESS_KEY_ID'] = 'YourACCESSKEY'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'YOURSECRETACCESSKEY'
+
+# Initialize SparkSession with Hadoop-AWS package
+spark = SparkSession.builder \
+    .appName("WeatherDataStreaming") \
+    .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.2.2") \
+    .getOrCreate()
+
+# Set S3 configurations
+hadoop_conf = spark._jsc.hadoopConfiguration()
+hadoop_conf.set("fs.s3a.access.key", os.environ['AWS_ACCESS_KEY_ID'])
+hadoop_conf.set("fs.s3a.secret.key", os.environ['AWS_SECRET_ACCESS_KEY'])
+hadoop_conf.set("fs.s3a.endpoint", "s3.amazonaws.com")
+hadoop_conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+hadoop_conf.set("fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
+
+# Define schema for weather data
+weather_schema = StructType([
+    StructField("Location", StringType(), True),
+    StructField("Date", StringType(), True),
+    StructField("Min Temperature", DoubleType(), True),
+    StructField("Max Temperature", DoubleType(), True),
+    StructField("Precipitation", DoubleType(), True),
+    StructField("Wind Speed", DoubleType(), True),
+    StructField("Humidity", DoubleType(), True)
+])
+
+# Kafka consumer configuration
+consumer = KafkaConsumer('weather_data',
+                         bootstrap_servers='localhost:9092',
+                         auto_offset_reset='earliest',  # Start consuming from beginning of topic
+                         group_id='weather-group',  # Consumer group ID
+                         value_deserializer=lambda m: json.loads(m.decode('utf-8')))
+
+# Consume messages from Kafka
+for message in consumer:
+    weather_data = message.value
+
+    # Convert JSON data to Spark DataFrame with schema
+    # Handle type conversion from string to appropriate types
+    weather_data_converted = {
+        "Location": weather_data["Location"],
+        "Date": weather_data["Date"],
+        "Min Temperature": float(weather_data["Min Temperature"]),
+        "Max Temperature": float(weather_data["Max Temperature"]),
+        "Precipitation": float(weather_data["Precipitation"]),
+        "Wind Speed": float(weather_data["Wind Speed"]),
+        "Humidity": float(weather_data["Humidity"])
+    }
+
+    weather_df = spark.createDataFrame([weather_data_converted], schema=weather_schema)
+
+    # Perform further processing or analysis on the data
+    weather_df.show()
+
+    # Write the DataFrame to S3
+    weather_df.write.mode('append').parquet("s3a://weather-nevina/weather_data/")
+
+# Close the consumer when done
+consumer.close()
+
+# Stop the SparkSession
+spark.stop()
