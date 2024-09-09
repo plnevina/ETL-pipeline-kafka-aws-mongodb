@@ -13,7 +13,7 @@ producer = KafkaProducer(bootstrap_servers='localhost:9092',
 
 # Configuration for Visual Crossing Weather API
 BaseURL = 'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/'
-ApiKey = 'GY9ZHUA5LQ3JJNELTU4JCJB2E'
+ApiKey = 'YOURAPIKEY'
 UnitGroup = 'us'
 Location = 'Washington,DC'
 StartDate = '2024-06-01'
