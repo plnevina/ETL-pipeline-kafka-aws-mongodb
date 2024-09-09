@@ -5,4 +5,4 @@
 
 -Apache Kafka is set to start to receive data from weather api and ingested to Apache Spark.
 
--The data streamed by spark  was stored in AWS s3 bucket and MongoDB.
+-The data streamed by spark  was stored in AWS S3 bucket and MongoDB.
